@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>角色卡架构设计图（交互式）</title>
+<style>
+  :root {
+    --bg:#f5f6f8; --card:#ffffff; --ink:#1f2430; --muted:#6b7280;
+    --line:#e5e7eb; --accent:#2563eb; --accent-soft:#eff6ff;
+    --ok:#16a34a; --warn:#d97706; --no:#dc2626; --chip:#f1f5f9;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px 12px 80px; background:var(--bg); color:var(--ink);
+         font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif; line-height:1.6; }
+  .wrap { max-width:1100px; margin:0 auto; }
+  header h1 { margin:0 0 6px; font-size:24px; }
+  header p { margin:0 0 4px; color:var(--muted); font-size:14px; }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; margin:14px 0 18px; font-size:13px; }
+  .legend span::before { content:"● "; font-weight:bold; }
+  .legend .ok::before{color:var(--ok);} .legend .warn::before{color:var(--warn);} .legend .no::before{color:var(--no);}
+
+  .tabs { display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap; }
+  .tab { padding:8px 16px; border:1px solid var(--line); border-radius:999px;
+         background:var(--card); cursor:pointer; font-size:14px; }
+  .tab.active { background:var(--ink); color:#fff; border-color:var(--ink); }
+
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:18px 20px; margin-bottom:16px; }
+  .card h2 { margin:0 0 6px; font-size:17px; }
+  .card .note { color:var(--muted); font-size:13px; margin:0 0 14px; }
+
+  /* 链路视图 */
+  .chain-bar { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+  .chain-btn { padding:6px 14px; border:1px solid var(--line); border-radius:8px;
+               background:var(--card); cursor:pointer; font-size:13px; }
+  .chain-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+
+  .flow { display:flex; flex-wrap:wrap; align-items:stretch; gap:6px; }
+  .node { flex:1 1 150px; min-width:130px; border:1px solid var(--line); border-radius:10px;
+          background:var(--card); padding:10px 12px; cursor:pointer; position:relative; }
+  .node:hover { border-color:var(--accent); background:var(--accent-soft); }
+  .node.sel { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); background:var(--accent-soft); }
+  .node .t { font-weight:600; font-size:13px; }
+  .node .r { color:var(--muted); font-size:11px; margin-top:2px; }
+  .node .kids { position:absolute; right:6px; top:6px; background:var(--chip); border-radius:999px;
+                padding:0 6px; font-size:10px; color:var(--muted); }
+  .arrow { align-self:center; color:var(--muted); font-size:18px; flex:0 0 auto; }
+
+  /* 钻取详情 */
+  .drill { border-top:1px dashed var(--line); margin-top:14px; padding-top:12px; }
+  .crumb { font-size:13px; color:var(--muted); margin-bottom:8px; }
+  .crumb b { color:var(--ink); }
+  .crumb a { color:var(--accent); cursor:pointer; }
+  .drill .summary { font-size:14px; margin-bottom:10px; }
+  .drill .summary .role { display:inline-block; background:var(--chip); border-radius:6px;
+                          padding:1px 8px; font-size:12px; color:var(--muted); margin-right:6px; }
+  .subgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; }
+  .sub { border:1px solid var(--line); border-radius:8px; padding:9px 11px; cursor:pointer; font-size:13px; }
+  .sub:hover { border-color:var(--accent); background:var(--accent-soft); }
+  .sub .t { font-weight:600; }
+  .sub .d { color:var(--muted); font-size:12px; margin-top:2px; }
+  .back { color:var(--accent); cursor:pointer; font-size:13px; }
+
+  /* 树视图 */
+  .tree ul { list-style:none; margin:0; padding-left:18px; }
+  .tree > ul { padding-left:0; }
+  .tree li { margin:2px 0; }
+  .tnode { display:inline-flex; align-items:center; gap:6px; cursor:pointer; padding:3px 8px;
+           border-radius:6px; font-size:14px; }
+  .tnode:hover { background:var(--accent-soft); }
+  .tnode .tw { transition:transform .15s; font-size:11px; color:var(--muted); }
+  .tnode.open .tw { transform:rotate(90deg); }
+  .tnode .badge { font-size:10px; background:var(--chip); border-radius:999px; padding:0 7px; color:var(--muted); }
+  .tnode.warn { color:var(--warn); }
+  .tnode.no { color:var(--no); }
+  .desc { color:var(--muted); font-size:12px; margin-left:4px; }
+
+  .pending li { margin:8px 0; font-size:14px; }
+  .pending .warn { color:var(--warn); font-weight:bold; }
+  .empty { color:var(--muted); font-size:14px; padding:16px 0; }
+
+  /* 功能清单视图 */
+  .features .feat { border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:10px; }
+  .features .feat:hover { border-color:var(--accent); }
+  .feat .fh { font-size:15px; margin-bottom:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .feat .fl { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:4px 12px; font-size:12px; }
+  .feat .fl span { display:block; }
+  .feat .fl i { font-style:normal; color:var(--muted); margin-right:4px; }
+  .features .ok { color:var(--ok); }
+  .features .warn { color:var(--warn); }
+  .features .no { color:var(--no); }
+
+  footer { color:var(--muted); font-size:12px; margin-top:20px; }
+  code { background:#eef0f3; padding:1px 5px; border-radius:4px; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>角色卡架构设计图（交互式）</h1>
+  <p>点任意模块往下钻；绿色=已定稿，黄色=设计待拍板，红色=已否掉。改设计 = 只改本文件 <code>ARCH_DATA</code>。设计没敲定看「设计待拍板」；设计定了代码没做的看「实现待办」，两者彻底分开。</p>
+  <p style="color:#b78a2f">⚙️ <b>数值约定（全图通用）</b>：所有涉及数值的设计（条数、分钟数、阈值、次数、间隔……），前端一律允许自定义、不写死；本图写的数字 = 本版默认值（用户不改就按这个跑）。</p>
+</header>
+
+<div class="legend">
+  <span class="ok">已定稿</span>
+  <span class="warn">待拍板</span>
+  <span class="no">已否掉</span>
+</div>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-view="chains">链路钻取</div>
+  <div class="tab" data-view="tree">总览树</div>
+  <div class="tab" data-view="features">功能清单</div>
+  <div class="tab" data-view="pending">设计待拍板</div>
+  <div class="tab" data-view="todo">实现待办</div>
+</div>
+
+<!-- 链路钻取视图 -->
+<div id="view-chains">
+  <div class="chain-bar" id="chainbar"></div>
+  <div class="card">
+    <div class="flow" id="flow"></div>
+    <div class="drill" id="drill"></div>
+  </div>
+</div>
+
+<!-- 总览树视图 -->
+<div id="view-tree" style="display:none">
+  <div class="card tree" id="tree"></div>
+</div>
+
+<!-- 功能清单视图（全功能盘点：防止重构漏迁） -->
+<div id="view-features" style="display:none">
+  <div class="card features" id="features"></div>
+</div>
+
+<!-- 待拍板清单视图（纯设计层：只放设计还没敲定的） -->
+<div id="view-pending" style="display:none">
+  <div class="card pending" id="pending"></div>
+</div>
+
+<!-- 实现待办视图（代码层：设计已定稿，只是还没写进代码） -->
+<div id="view-todo" style="display:none">
+  <div class="card pending" id="todo"></div>
+</div>
+
+<footer>
+  维护：编辑本文件底部的 <code>ARCH_DATA</code>（纯 JS 对象），保存后刷新即可。无需联网、无 CDN。
+</footer>
+</div>
+
+<script>
+/* ================================================================
+   架构数据 —— 唯一真相源。改架构就改这里。
+   每个节点字段：
+     t   标题
+     r   角色/定位（小字，可选）
+     d   它干了什么（描述）
+     k   children 子节点数组（可继续钻）
+     s   状态：'ok' 已定稿 / 'warn' 待拍板 / 'no' 已否掉（可选）
+   ================================================================ */
+const ARCH_DATA = {
+
+chains: [
+  {
+    id:'reply', name:'① 消息回复链路',
+    nodes:[
+      {t:'IM 消息', r:'入站', d:'群聊 / 私聊消息', s:'ok', k:[]},
+      {t:'gateway 入站（网关）', r:'协议接入层', d:'把 消息协议（IM 接入协议）事件转成内部标准事件；raw_payload（原始载荷）无损归档（含 mapping_version 转译版本标记，转译错可复盘）', s:'ok', k:[
+        {t:'parse 解析', d:'消息协议（IM 接入协议）→ 标准事件（sender 说话人 / chat_type 会话类型 / target_id 会话对象 / clean_message 干净文本）'},
+        {t:'_dump_raw 归档', d:'原始载荷紧凑 JSON 落库，不丢字节'},
+        {t:'enrich 图片富化', d:'已接入（2026-11-06 复核）：投递 planner 前调用 enrich 下载图片、回填 images_json，供 VisionWorker 入队'},
+      ]},
+      {t:'planner 防抖批次（调度器）', r:'后台 8000', d:'消息进 Debouncer（防抖器）攒批，到点或凑满 flush（批量送出）', s:'ok', k:[
+        {t:'Debouncer（防抖器）', d:'timer 用 get_running_loop()（当前事件循环）；get_event_loop 是坑，曾致 timer 失效'},
+        {t:'merge_batch（合并批次）', d:'合并批次，保留 timestamp（时间戳）/ msg_id（消息ID）不断链'},
+        {t:'触发判断', d:'SKIP（跳过）/ 随机 0.1 / @ 提及 / 热聊窗口，四选一'},
+      ]},
+      {t:'core flash 生成（核心）', r:'LLM 9000', d:'build system prompt（组装系统提示词：人设+画像+记忆+黑话注入）→ flash 4.1（快速模型）出回复', s:'ok', k:[
+        {t:'人设注入', d:'流绑卡 persona_text（人设文本）'},
+        {t:'画像/记忆/黑话', d:'profile_facts 画像事实 + memory_summaries 记忆摘要召回 + persona_slang 卡黑话'},
+        {t:'触发热词', d:'aliases（称呼别名）识别（私聊称呼识别 bug 已修）'},
+      ]},
+      {t:'COMPLEXITY 判断（复杂度）', r:'flash 自己判', d:'一次调用内输出 [COMPLEXITY:1/3]（复杂度分档）；简单直接用，复杂转 PRO。不要默认简单', s:'ok', k:[
+        {t:'=1 简单', d:'flash 输出整体采用，零额外成本'},
+        {t:'=3 复杂', d:'flash 输出整体作废，PRO（专业模型）完整重跑'},
+      ]},
+      {t:'PRO 整体重跑（专业模型）', r:'仅复杂场景', d:'同一次调用换模型，不拆两次（输入占 96.8%，拆两次翻倍）', s:'ok', k:[
+        {t:'重出正文', d:'不带 flash 正文，PRO 自己写'},
+        {t:'旁路数据全重出', d:'方括号标记 + 工具调用 + reasoning（推理），一个不漏'},
+        {t:'PRO 失败回落', d:'回落 flash 首次输出，不丢回复'},
+      ]},
+      {t:'旁路数据', r:'与回复同调用产出', d:'没发出去、但很重要；COMPLEXITY=3 时由 PRO 全量重出', s:'ok', k:[
+        {t:'方括号标记', d:'正文内产出的旁路动作，不发给用户；COMPLEXITY=3 时全量重出', s:'ok', k:[
+          {t:'[REPLY] [SKIP] [NEXT_INTERVAL]', d:'引用回复 / 本轮不参与 / 下次评估间隔'},
+          {t:'[MOOD] [POKE] [SEND]', d:'好感变化 / 戳一戳 / 发文件（仅我）'},
+          {t:'[PROFILE] 画像增量', d:'facts（事实）/ tags（标签）/ mood_reason（心情原因）三块画像增量'},
+          {t:'兴趣点奖惩（三字段）', d:'✅ accuracy 准确度 0-10 / valence 态度 pos-neg-neutral / strength 强度 0-10 时间指数衰减；打分就写提示词，塞进 [PROFILE] 旁路扩展结构，跟其他回复中直接判断的一样塞', s:'ok'},
+        ]},
+        {t:'工具调用', d:'request_mention 选人 / request_sticker 选图 / set_mood 落好感 / query_cognitive 查记忆 / web_search 搜索 / query_config 查配置 等(仅我)'},
+        {t:'reasoning_content（推理内容）', d:'推理内容，泄漏会拦截'},
+      ]},
+      {t:'outbox 发出去（出站）', r:'协议出站', d:'消息协议 /send_group_msg（发群消息）、/send_private_msg（发私聊消息）', s:'ok', k:[
+            {t:'group / private / qzone 出站', d:'qzone 已有独立鉴权出站入口；生产带标记空间发布和好友互动已核对可见。日记按账号留档，结果未确认不自动重发；自动发布/好友互动开关按配置控制'},
+      ]},
+    ]
+  },
+
+  {
+    id:'fragment', name:'② 群聊三条轨（订阅广播 / 本地碎片 / 本地兜底）',
+    nodes:[
+      {t:'群聊消息', r:'源·白名单群', d:'白名单群的消息一进来，就分叉出三条轨，各走各的游标，互不干扰', s:'ok', k:[
+        {t:'为什么三条轨', d:'①订阅广播：固定15条切出去；②本地碎片升级：15条触发后按热聊窗口延伸（游标会跳）；③本地兜底：200条/6小时双触发。三者游标独立，否则互相踩脚'},
+      ]},
+      {t:'三条轨（分叉）', r:'三条游标', d:'点开看：轨A 订阅广播 / 轨B1 本地碎片升级 / 轨B2 本地兜底', s:'ok', k:[
+        {t:'轨A｜订阅轮询（原订阅广播）', d:'✅ 已定（2026-11-03）：群不再自己切批推送，改成「订阅方角色卡按时间轴轮询各群收原文」——一次只看一个群，看完去下一个，拟人 + 错峰 + 不猛薅', s:'ok', k:[
+          {t:'轮询游标（订阅方×群 独立）', d:'每个订阅方对每个被订阅群各记一条「上次看到哪」；轮到该群时，从游标往后拉，不是群攒够才拉', s:'ok'},
+          {t:'拉取量', d:'15 条实质消息 或 20 分钟（先到先切，可配 10-20 条 / 10-40 分钟）；拉到哪推进到哪', s:'ok'},
+          {t:'每轮之间歇', d:'✅ 已定（2026-11-03）：轮完一圈歇 10 分钟再开下一轮；默认 10 分钟，前端可配', s:'ok'},
+          {t:'投递原文（不摘要）', d:'每个订阅方用自己的卡人设 + 对我的了解独立判断，不共用一个群本地摘要', s:'ok', k:[
+            {t:'为什么不摘要', d:'群本地卡抓不到「私聊卡才懂的权重」——如私聊我的暗恋对象在某群，群本地摘要会漏掉这个重点；只有私聊卡自己看原文才提得起来'},
+            {t:'私聊订阅方', d:'用该私聊流绑卡 + 对该我的了解判断'},
+            {t:'群聊订阅方', d:'A群卡订阅B群（成员重叠才安全，靠我显式开关）'},
+            {t:'空间不在此处', d:'空间不是订阅方'},
+          ]},
+          {t:'私聊线 冲动判断', r:'打分语义0-10', d:'打分=「是否愿意继续关注并跟用户吐槽」', s:'ok', k:[
+            {t:'打分输入', d:'本轮拉到的原文（15条/20分钟）+ 最近10条本地私聊上下文'},
+            {t:'用户意愿不硬减分', d:'角色卡下次打分自动结合语境判断用户意愿'},
+            {t:'打分无痕', d:'用后即弃，不进上下文/记忆'},
+          ]},
+          {t:'热聊窗口状态机（私聊吐槽）', r:'阈值8/7', d:'push（推送开口）≥8开口；<7关窗；7~8中间态不push但继续关注', s:'ok', k:[
+            {t:'开窗', d:'第一次冲动触发后开启；窗口内私聊上下文持续可见对应群最新消息'},
+            {t:'≥8 push', d:'拉原文（回读50条）→组织分享语→私聊开口'},
+            {t:'7~8中间态', d:'不push但继续关注，[NEXT_INTERVAL:30~600秒]自定下次再看'},
+            {t:'<7关窗', d:'LLM自判话题结束/失去兴趣；关窗=合并整个窗口期生成摘要升级落库', s:'ok', k:[
+              {t:'落私聊流 summary', d:'push 后的讨论也并进同一条摘要，记在私聊流里；与私聊兜底摘要轨做时间去重'},
+            ]},
+            {t:'push后续', d:'进入「等你接话」挂起态（2026-11-11 已接：等接收会话新消息后才可再次分享）'},
+          ]},
+          {t:'群聊线（订阅吐槽）', r:'冲动≥8', d:'B群卡拿A群碎片吐槽，落B群自己的记忆', s:'ok', k:[
+            {t:'打分输入（跨群语境）', d:'✅ 已定：跨群语境对照——隔壁群也在聊同话题时，bot 可附和参照（如「这剧情隔壁群也怎么怎么说」），对整体语境和氛围打分，不是给特定人回复', s:'ok'},
+          ]},
+        ]},
+        {t:'轨B1｜本地碎片升级（游标B1）', d:'15条/20分钟触发 → 打分「值得记录」→ ≥7开窗延伸 → <7关窗合并升级', s:'ok', k:[
+          {t:'游标B1', d:'独立；触发升级后按热聊窗口往后延伸，游标会跳到窗口结束处，非固定15步进'},
+          {t:'打分语义「值得记录」', d:'由角色卡自己判断这段值不值得记（0-10），不是「参与话题意愿度」也不是「值得吐槽」', s:'ok', k:[
+            {t:'复用私聊热聊状态机', d:'只有打分语义不同；窗口延伸、关窗合并、打分无痕都复用'},
+            {t:'打分无痕', d:'用后即弃，防上一轮分数锚定下一轮（治大模型倾向打高/不肯关窗）'},
+          ]},
+          {t:'阈值判断 ≥7 开窗', d:'≥7 触发记录窗口；<7 直接丢弃不落库（chat_messages 本就存原文，碎片落库=再存一遍冗余）', s:'ok'},
+          {t:'输入 45条原文 + 延伸窗口', d:'15×3=45条原文是开窗引子；开窗后持续喂入后续消息，直到关窗为止', s:'ok'},
+          {t:'阈值判断 <7 关窗', d:'LLM 判断话题结束/失去兴趣 → <7 关窗（值得记录=注意力焦点；失去兴趣=不值得记了）', s:'ok', k:[
+            {t:'关窗合并整窗口', d:'从触发那 45 条到关窗为止的所有消息，整体调 /v1/summary 升级，importance 给定 7，不再让 LLM 重新判分'},
+            {t:'关窗后游标跳窗口尾', d:'游标跳到窗口结束处，重新开始 15 条切'},
+          ]},
+        ]},
+        {t:'轨B2｜老summary兜底（游标B2）', d:'200条/6小时 双触发 → SKIP 或摘要（不升级）', s:'ok', k:[
+          {t:'游标B2', d:'独立推进，不因轨B1的15条切批而动'},
+          {t:'双触发（先到先切）', d:'', s:'ok', k:[
+            {t:'满200条切', d:'热群靠它；200条×25字≈5000字，不到一份人设（✅已拍板）'},
+            {t:'满6小时切', d:'冷群消息不够200也切，一天至少4段，本身就是兜底（✅已拍板）'},
+          ]},
+          {t:'SKIP 或摘要', d:'LLM粗判；门槛比7分宽，一整天没大事也记「今天很平淡」，否则分不清「没事」还是「出bug/卡拔了」', s:'ok', k:[
+            {t:'SKIP 就跳过', d:'不摘要，直接跳过这段'},
+            {t:'摘要就生成摘要', d:'直接调 /v1/summary 生成摘要落 summary 长期层；无 importance 判定、无升级那套'},
+          ]},
+        ]},
+        {t:'时间去重（B1/B2 共用）', d:'同一卡×同一流，靠 source_msg_range 时间锚判断已摘要段落则跳过（防重复记录同一段信息的摘要）', s:'ok'},
+      ]},
+    ]
+  },
+
+  {
+    id:'private', name:'③ 私聊流（记忆 + 行为 两维）',
+    nodes:[
+      {t:'私聊流', r:'一对一', d:'私聊 = 两个并列维度：记忆怎么记 + 什么时候发消息。点开分别看', s:'ok', k:[
+        {t:'记忆：兜底摘要轨', d:'私聊只有这一条记忆轨；50条/6小时 双触发 → SKIP 或摘要 → 落 summary 长期层', s:'ok', k:[
+          {t:'为什么只有一条记忆轨', d:'私聊消息来源单一（就我），不需要「抓水群重点」的碎片升级；正常回复走图①，记忆只靠兜底摘要'},
+          {t:'双触发（先到先切）', d:'', s:'ok', k:[
+            {t:'满 50 条切', d:'私聊一对一信息密度大，不能 200 条，得 50 条（✅已拍板）'},
+            {t:'满 6 小时切', d:'聊得少也切，一天至少 4 段'},
+          ]},
+          {t:'SKIP 或摘要', d:'LLM 粗判；一整天没大事也记「今天很平淡」', s:'ok', k:[
+            {t:'SKIP 就跳过', d:'这段没什么可记，跳过'},
+            {t:'摘要就生成摘要', d:'直接调 /v1/summary 生成摘要落 summary 长期层；无 importance、无升级'},
+          ]},
+          {t:'时间去重', d:'同一卡×同一流，靠 source_msg_range 时间锚防重复摘要同一段；尤其防与「群聊冲动讨论摘要」重复', s:'ok', k:[
+            {t:'另一个摘要来源', d:'轨A私聊线冲动 push 后的讨论，关窗时也会合并升级成摘要，记在私聊流里；两条来源都要时间去重'},
+          ]},
+        ]},
+        {t:'行为：bot 什么时候发消息', d:'私聊里 bot 开口的 5 种触发源，每种独立', s:'ok', k:[
+          {t:'① 正常回复（被动）', d:'我发消息 → 走图①回复链路；这是最常见、唯一「被动」的', s:'ok'},
+          {t:'② 戳一戳（poke）', d:'我戳 bot → 回戳 / 文本回复（pipeline._handle_poke）', s:'ok', k:[
+            {t:'回戳概率', d:'poke_back_rate 默认 0.8'},
+            {t:'文本回复（已定稿）', d:'取消机械三句；0.2（20%）概率触发一次大模型的正常被动回复（走图①回复链路），允许输出 SKIP 不回复', s:'ok'},
+            {t:'代码现状', d:'设计定稿，代码待做：pipeline.py:334 仍是 random.choice 机械三句', s:'ok'},
+            {t:'高频惩罚', d:'不做——IM 原生已限频；我们代码里的 frequent_poke 那套是多余的，删', s:'no'},
+          ]},
+          {t:'③ 主动发起（proactive）', d:'✅ 定稿：兜底出口（三个心事出口之一）；积压触发，与「召回」分离', s:'ok', k:[
+            {t:'触发（积压驱动）', d:'该卡 48h 内活着的心事攒到 ≥5 条 → 触发主动私聊（5=初值，跑一周回校）', s:'ok'},
+            {t:'三层保险防刷屏', d:'① 间隔 3~4h（加随机浮动不整点）② 每天最多 3 次 ③ 48h TTL + 两主出口持续消耗', s:'ok'},
+            {t:'每次只说 1 条', d:'挑最想说的 1 条说，只销说出口那条；其余继续攒', s:'ok'},
+            {t:'说出口后降级', d:'pending 标 said_status=said + said_via=proactive，另写 summary 存聊完结果，因果链双向指向', s:'ok'},
+            {t:'目标=卡我', d:'改成卡级 personas.owner_qq，不写死全局 owner_qq；删概率掷骰', s:'ok'},
+            {t:'上线前清存量', d:'线上 pending 395 条（48h 活着 122：roleA 85 / roleC 26 / roleB 11），上线前清一次防连环触发', s:'ok'},
+            {t:'详见', d:'docs/MEMORY_RECALL_REBUILD.md §2.4', s:'ok'},
+          ]},
+          {t:'④ 订阅群推送（gossip 冲动）', d:'私聊订阅群 → 冲动≥8 → push 吐槽 + 进热聊窗口（图②轨A私聊线）', s:'ok', k:[
+            {t:'push 后续', d:'进入「等你接话」挂起态，上下文连续（实现待做）'},
+          ]},
+          {t:'⑤ 窥屏 peek', d:'🔴 已否掉：私聊订阅群就是窥屏，peek 已被订阅替代，不单独做', s:'no'},
+        ]},
+      ]},
+    ]
+  },
+
+  {
+    id:'diary', name:'④ 日记与空间',
+    nodes:[
+      {t:'日记库 persona_diary（日记表）', d:'persona_diary = 日记表（角色卡维度）；独立表，归卡；不是会话、不是流。字段是架构关键，先看字段', s:'ok', k:[
+        {t:'content 本地私密版（内容）', d:'日记原文，永远保留，不受公开审查影响'},
+        {t:'public_text 兼容公开文本', d:'旧字段保留首个确认发布的公开版本；各账号独立公开版本与结果存 persona_diary_publications'},
+        {t:'synced_at 兼容首次推送时间', d:'只兼容记录首次确认发布，不能据此判断其他账号已发；新发布判断使用日记×账号记录。旧已发账号未知则标记待核对，不自动重发'},
+        {t:'harmonized 是否被和谐', d:'1 = 空间版被审查改过（留痕）'},
+        {t:'embedding 向量', d:'阶段3巡查员回填，做语义联想用'},
+        {t:'origin_group_id 来源群', d:'冲动日记来自哪个群（定时日记为空）——这就是「挂谁」的溯源'},
+        {t:'diary_date 日期 / source_kind 来源类型', d:'scheduled 定时 / impulse 冲动'},
+      ]},
+      {t:'日记来源（设计）', r:'两类', d:'日记不是凭空写的：定时日记 = 每天回顾；冲动日记 = 群里出事的同一次冲动判断', s:'ok', k:[
+        {t:'定时日记 scheduled', d:'每卡每天 23:00 回顾当天，写一篇（每卡每天一篇）；数据源 = 当天产生的全部摘要 + 碎片（新事物），max 600 字', s:'ok'},
+        {t:'冲动日记 impulse', d:'✅ 已定：碎片判断时一并判断「要不要分享/发空间」，不是单独查空间订阅方打分；有想吐槽的就去写，不限一天一篇', s:'ok', k:[
+          {t:'受众', d:'空间（qzone 订阅方），不是不特定人群；空间流必须绑卡', s:'ok'},
+          {t:'触发点', d:'碎片判断的同一次里一并判断「要不要发空间」，不另查订阅表', s:'ok'},
+          {t:'冲动阈值', d:'impulse ≥ 8 才写日记（_subscriber_impulse 写死）；<8 不写', s:'ok'},
+          {t:'一天几篇', d:'✅ 已定：不限一篇，有想吐槽的就写；表 UNIQUE(persona_id, diary_date, source_kind) 限一天一篇是代码 bug，要拆', s:'ok'},
+        ]},
+        {t:'冲动日记的动机', d:'模拟「群里吵架/出事 → 直接去空间挂人」的主动发说说效果；不是例行记录，是卡憋不住要说', s:'ok'},
+      ]},
+      {t:'空间出口', r:'账号级展示平台', d:'日记推空间 = 卡的日记经审查后发一篇；空间发了就过、不回传记忆库', s:'ok', k:[
+        {t:'没绑卡', d:'空间关闭，只留本地日记'},
+        {t:'绑卡', d:'公开审查（客观视角）→ 合规直接发 / 不合规和谐后再发'},
+        {t:'本地日记', d:'永远原样保留，不受审查影响'},
+        {t:'多账号独立发布（2026-11-11 我确认）', d:'同卡挂多个账号空间时，每个已启用账号各发一次；发布结果按日记×账号留档，同账号不重复发。旧已发布但账号不明的记录保留待核对，不自动重发。结果不明不自动重发，管理页明确展示。'},
+      ]},
+        {t:'发说说出站', r:'本地与生产协议已验', d:'本地已验证空间配置、公开审查、Gateway 鉴权出站和确认后分账号留档；2026-11-13 已用带标记请求验证生产 Gateway 返回 tid 并落库，自动发布闸门仍关闭。结果不明不自动重发，真实自动循环继续按开关控制。', s:'ok'},
+        {t:'QZone 好友互动', r:'代码已落地，验收后关闭', d:'2026-11-14：好友动态只取好友且过滤推广，支持点赞、普通评论和楼中楼回复；动作独立写 qzone_social_actions，拔卡/换卡/停卡/关许可发送前阻断。生产带标记点赞与评论已实际可见，验收后 planner.qzone.social_enabled 恢复关闭。', s:'ok'},
+    ]
+  },
+
+  {
+    id:'learn', name:'⑤ 学习系统',
+    nodes:[
+      {t:'挂流子智能体', r:'就地学', d:'每个流挂一个，带该流绑卡人设；学习结果按卡归并', s:'ok', k:[
+        {t:'为什么挂流', d:'状态在哪学习就在哪：人设/一手上下文/画像/缓存本就在流里，零搬运'},
+        {t:'不设独立学习会话', d:'避免把上下文搬进卡会话、结果搬回卡、冷喂画像'},
+        {t:'按卡去重', d:'学前查已学跳过 + UNIQUE（唯一键）幂等 + embedding（向量）去重'},
+        {t:'异步', d:'回复 flash（快模型）/ 学习 PRO（专业模型），模型不同必须异步'},
+      ]},
+      {t:'黑话学习', r:'已做完', d:'规则粗筛 → PRO（专业模型）判断（带一手上下文+人设）→ 审查队列 → persona_slang（卡黑话表）', s:'ok', k:[
+        {t:'卡×群', d:'某卡在某群学的黑话只在该群该卡生效；卡进新群=新人从 0 学（不自动继承群资产）'},
+        {t:'去重键（已定稿）', d:'UNIQUE(persona_id 卡, group_id 群, word 词)；embedding 向量去重也限定同群内', s:'ok'},
+        {t:'群资产表', d:'group_slang_asset（群黑话资产表）存群资产；卡学到后自动推送，没人自动读，前端手动导入'},
+        {t:'审查队列', d:'我批准/拒绝/修改；批准生效、拒绝进黑名单（同词不再学）、修改后生效', s:'ok'},
+        {t:'一手上下文', d:'PRO 判断必须带原句样本 sample_ctx（多条）+ 说话人；只给词 = 瞎猜', s:'ok'},
+        {t:'溯源', d:'每条黑话链回它从哪条消息学的（source_msg_range 等），前端可查「这词哪来的」'},
+      ]},
+      {t:'学习系统（统一单元模型）', r:'✅ 已定稿并完成本地实现 2026-11-10', d:'黑话 + 表达学习（含互动习惯对）统一成一张表 persona_learning_unit，unit_kind 区分四类。迁移 018、学习循环、审批、显式流资产导入和召回已落地；见 docs/P2_LEARNING_LOCAL_IMPLEMENTATION_20261110.md', s:'ok', k:[
+        {t:'统一表 persona_learning_unit', d:'unit_kind ∈ slang(黑话)/reply_to(接话对)/topic(话题对)/interaction(互动习惯对)；维度=卡×流 (persona_id, chat_type, target_id)；persona_id NULL=流资产行（换卡导入源）', s:'ok'},
+        {t:'互动习惯对 interaction（原「行为学习」新形态）', d:'✅ 2026-11-04 定稿：不单独做「行为学习」模块——即时互动靠当下上下文，跨会话的「对方做了什么→bot 怎么回应」（被调戏→回表情包反击）并进表达学习，作为第三种单元', s:'ok'},
+        {t:'审查与状态', d:'pending/approved/rejected/edited/retired；我批准才生效；软退役永不物理删除（铁律8）', s:'ok'},
+        {t:'注入', d:'每次回复按卡×流×生效状态捞候选，默认取 6 条（可配 5~8）；黑话=词命中优先，表达=向量相似度排序（BGE-M3 已实测可用）→常用性兜底', s:'ok'},
+        {t:'末位淘汰', d:'每月 1 日按近 30 天使用次数，黑话/表达分组各淘汰末 10%（不足 1 条不淘汰）；软退役留库', s:'ok'},
+        {t:'实施状态', d:'✅ 本地已实现（2026-11-10）：迁移 018 建表，按账号×角色卡×流累计 20 条消息，由 learner 异步提炼；审批通过后生成流资产，但必须由 WebUI 显式导入其他角色卡；旧 persona_learned 仅保留历史兼容。', s:'ok'},
+      ]},
+      {t:'行为学习（旧独立模块）', r:'已并入表达学习', d:'🔴 2026-11-03 否掉「单独做行为学习模块」：群里调戏吉祥物这类即时互动靠当下上下文直接反应；跨会话的「对方做了什么→bot 怎么回应」并进表达学习第三单元「互动习惯对 interaction」（见上「学习系统」）；防复读/防回机器另挂守卫', s:'no'},
+    ]
+  },
+
+  {
+    id:'persona-module', name:'⑥ 角色卡模块（表全景）',
+    nodes:[
+      {t:'角色卡三表（核心）', r:'双轴的心脏', d:'一张卡 = personas（本体）绑定账号（bindings）后，在哪些流上生效（scopes）', s:'ok', k:[
+        {t:'personas（卡本体）', d:'persona_id / name / persona_text 人设文本（唯一真源）/ source_kind 来源 / visibility 可见性 / status 状态', s:'ok', k:[
+          {t:'owner_qq 列（已定）', d:'「卡认定的我」字段已拍板；schema 改动待做，proactive 目标、我身份提示改读卡级 owner_qq', s:'ok'},
+        ]},
+        {t:'persona_bindings（卡绑号）', d:'一张卡可跨账号复用；(persona_id, account_uin) 主键'},
+        {t:'persona_scopes（卡作用域）', d:'卡在哪些流生效：all_groups / group / private / agent；target_id 空=该类全量。卡插哪，哪就是它可读范围', s:'ok'},
+      ]},
+      {t:'记忆 5 类（都归卡）', r:'persona_id 第一键', d:'卡的所有记忆都带 persona_id，是「失忆前人格」的资产', s:'ok', k:[
+        {t:'fragment 碎片', d:'kind=fragment；临时 3 天 TTL；轨B1 打分≥7 才落库，<7 丢弃（原文在 chat_messages）', s:'ok'},
+        {t:'summary 摘要', d:'kind=summary；长期层，半衰期衰减沉底不删；轨B2/私聊兜底产出', s:'ok'},
+        {t:'pending 心事', d:'✅ 定稿：摘要时独立判断「想说没说」，带 outlet（private/qzone/both）；说出口不删，降级成 summary 存结果，因果链双向指向', s:'ok', k:[
+          {t:'字段', d:'said_status(unsaid/said) + said_via(reply/proactive/qzone) + qzone_action(post,未来like/comment) + said_to_summary_id', s:'ok'},
+          {t:'召回只取未说', d:'向量召回只召 said_status=unsaid；已说的永久留库不进候选', s:'ok'},
+        ]},
+        {t:'diary 日记', d:'独立表 persona_diary；scheduled 定时(23:00回顾) / impulse 冲动(碎片判断时一并判断要不要发空间，不限一天一篇)', s:'ok'},
+        {t:'ops 运维', d:'ops_memories（运维记忆表），归运维卡 roleB；source_kind=agent', s:'ok'},
+        {t:'溯源', d:'五种全带 source_msg_range / first_msg_at / last_msg_at / target_id（大模型加工产物写库必带原文）', s:'ok'},
+      ]},
+      {t:'角色卡资产（可空）', r:'可清空不影响对话', d:'全带 persona_id + 溯源；空了卡退化成「失忆人格」仍能聊', s:'ok', k:[
+        {t:'user_profiles / profile_facts（画像）', d:'用户画像 + 事实/标签；fact 溯源它基于哪条消息'},
+        {t:'affection_history（好感）', d:'好感流水；她不主动播报（防 PUA）'},
+        {t:'persona_interest（兴趣点）', d:'✅ 已定：accuracy/valence/strength 三字段打分写提示词，塞进 [PROFILE] 旁路扩展结构；表未建（实现待做）', s:'ok'},
+        {t:'persona_slang（黑话）', d:'卡×群黑话，UNIQUE(persona_id,group_id,word)；卡进新群从 0 学'},
+        {t:'auto_reply_texts（自动回复学习表）', d:'✅ 已恢复（2026-11-03 迁移补回）：IM 自动回复原文学习表，按 bot_uin 分开；命中过一次永久记住；gateway 写', s:'ok'},
+      ]},
+      {t:'订阅与流设置（卡×流）', r:'卡插流后的配置', d:'卡在一个流上怎么跑、看哪个源，由这些表决定', s:'ok', k:[
+        {t:'chat_stream_settings（流设置）', d:'bot_uin + chat_type + target_id 绑卡 + 静默/冷却等流级参数'},
+        {t:'stream_subscription（订阅）', d:'会话 × 源；subscriber 订阅方 + source_kind/source_id 被订阅源；空间不是订阅方'},
+      ]},
+      {t:'归属键一览', r:'记死别串号', d:'v3 铁律：凡是卡资产必带 persona_id，凡是账号资产必带 bot_uin，凡是流必带 (bot_uin, chat_type, target_id)', s:'ok'},
+    ]
+  },
+  {
+    id:'interop', name:'⑦ 第三方 IM 插件兼容（角色卡带走）',
+    nodes:[
+      {t:'缘起', r:'用户诉求', d:'原本用第三方 IM 插件的用户，试用我们这套后若觉得不满意，要能随时切回去——但角色卡维度的东西要能带过去，不能从零重建', s:'ok', k:[]},
+      {t:'技术事实（已核实）', r:'2026-11-03 通读源码', d:'通读 第三方 IM 插件 源码（README / registry.ts / prompt.ts / card-relay.ts / cordis.patch.yml）后的结论', s:'ok', k:[
+        {t:'✅ 关键结论：无跨会话人格共享', d:'对方每个 IM 会话一个孤立 agent、各记各的账（session 历史会话私有）；没有卡级记忆/画像/好感跨会话连续。这是它与我们唯一的本质差异', s:'ok'},
+        {t:'表达学习/酒馆卡导入/运维它都有', d:'只是形态不同：卡是用户手动插 preset（我们是自动导入工具）；运维 = agent 本身就能 ssh/终端/子进程（我们多套一层角色卡+归档）', s:'ok'},
+        {t:'第三方 IM 插件 支持挂 preset', d:'配置项 agentPreset / agentPresetGroup，还能 /preset 按会话覆盖——每个 IM 会话挂一个 DSH agent preset。月下载 6 万，兼容 消息协议端/Lagrange/LL消息协议/消息协议端'},
+        {t:'preset 能注入人设', d:'@deepseek-ai/dsh-persona：config.prefix/suffix/complete，专门给单个 agent 注入人设并覆盖部署级默认。官方包，零改造'},
+        {t:'DSH 能连外部 MCP', d:'@deepseek-ai/dsh-mcp-client（@modelcontextprotocol/client）：连外部 MCP server 并把工具注册到 ctx.tools——这是让我们库被外部 agent 读取的通道'},
+        {t:'DSH 本身能运维', d:'宿主 Service 已有 ctx.ssh / ctx.terminals / ctx.subprocess / ctx.tools——运维不需要我们自己实现执行层'},
+      ]},
+      {t:'能带走什么（分级）', r:'必须诚实', d:'决定了用户切过去后的体验边界', s:'ok', k:[
+        {t:'✅ 纯 prompt 注入（零改造）', d:'角色卡正文、说话风格、黑话表、记忆摘要、好感度当前分值、未说心事——每轮查库拼进 persona.prefix'},
+        {t:'⚠️ 带过去但会停', d:'跨会话人格共享（卡级记忆/画像/好感连续）在那边停掉——对方每会话各记各的账。记忆快照还在，但不再跨会话长', s:'warn'},
+        {t:'🔴 完全带不过去', d:'我们 planner 的后台机制（订阅轮询、碎片生成、心事触发、兴趣点三字段）在那边不存在，这些功能整个消失。必须诚实告知用户'},
+      ]},
+      {t:'两条落地路径', r:'共用一套 preset 资产', d:'✅ 已定稿（2026-11-03）：本轮只做路径 A；路径 B 留作后续可选', s:'ok', k:[
+        {t:'路径 A：preset 静态快照（本轮做）', d:'定时把我们库里的角色卡+黑话+记忆摘要+好感值导出成 preset 的 persona.prefix；用户装一个 preset 就能带走人格与记忆。不改对方一行代码', s:'ok'},
+        {t:'路径 B：MCP server 实时接口（后续可选）', d:'在 A 之上，我们另起一个常驻 MCP server 暴露查询工具；对方 agent 通过 dsh-mcp-client 连上来实时查。先不上', s:'warn'},
+        {t:'共用的资产', d:'两条路径都用同一份「角色卡 preset 生成器」；同一份也服务于我们自己的运维会话（见 ⑤ 运维会话）'},
+      ]},
+      {t:'边界（必须先说清）', r:'不能骗用户', d:'这是产品诚实性问题，不是技术问题', s:'ok', k:[
+        {t:'切过去 ≠ 一切照旧', d:'那边没有我们的 planner 后台，订阅/碎片/心事触发全停，跨会话人格共享也停。用户要明白「人格快照还在，但不再长了」'},
+        {t:'不抢占对方插件', d:'我们不改 第三方 IM 插件 源码，只通过它公开的 preset / MCP 接口协作'},
+        {t:'反向也要支持', d:'用户从对方切回我们时，同样要把在那边产生的对话尽可能导入我们的记忆体系'},
+      ]},
+    ]
+  },
+],
+
+tree: {
+  t:'角色卡双轴架构', d:'IM 机器人：角色卡(persona) × 账号(account) 双轴', s:'ok',
+  k:[
+    {t:'双轴模型', d:'灵魂(卡)与身体(号)分离', s:'ok', k:[
+      {t:'角色卡 persona', d:'身份+记忆归属；可复制、可热插拔', k:[
+        {t:'roleA 角色A', d:'群聊卡'},
+        {t:'roleB 角色B', d:'私聊观察者 + 运维卡'},
+        {t:'roleC 角色C', d:'群聊卡（虎鲸娘）'},
+      ]},
+      {t:'账号 account', d:'运行载体 bot_uin（机器人IM号）', k:[
+        {t:'10001', d:'角色A号'},
+        {t:'10002', d:'角色C号'},
+      ]},
+      {t:'流 ChatStream（会话流）', d:'(bot_uin 账号, chat_type 会话类型, target_id 会话对象) 绑卡', k:[
+        {t:'private 私聊'},
+        {t:'group 群聊'},
+        {t:'qzone 空间出口'},
+        {t:'agent 运维会话', d:'第三种会话维度，独立于私聊/群聊；前端 agent = DSH Web 本身，我们在外面套「角色卡 + 记忆归档」。全局只有一个，不按账号分裂', s:'ok', k:[
+          {t:'运维卡（角色卡）', d:'✅ 已定：persona_scopes scope_type=\'agent\' 且 target_id=\'\'；一卡套所有 agent 会话；本实例 = roleB'},
+          {t:'运维标记（IM 侧入口）', d:'✅ 已定：chat_stream_settings 里 chat_type=agent 的那行；全局唯一、仅能设私聊（防群聊误设→群聊进 agent 模式）；不设就无法在 IM 侧用'},
+          {t:'人设 vs 纪律分离', d:'✅ 已定：人设来自角色卡 persona_text；纪律（权限边界/回滚/留文档）硬编码预设 + 前端可覆盖。角色卡不该带运维纪律——纪律是工种底线，不属于角色人设'},
+          {t:'运维记忆 ops', d:'✅ 已定：三类记忆并列（summary 聊天/diary 日记/ops 运维），ops 存 ops_memories，source_kind=agent，统一向量联想'},
+          {t:'#agent 兜底入口', d:'✅ 已定：#agent 不动，作为前端爆炸时的兜底；鉴权走运维标记；本质=开个临时会话复用同一套 AgentSession'},
+          {t:'✅ 复用 DSH 原生 agent（已定稿）', d:'运维会话直接复用 DSH Web 自身的 agent（ctx.ssh/terminals/subprocess/tools），我们在外面套「角色卡 + 记忆归档」；不再自研 apps 执行层', s:'ok'},
+        ]},
+      ]},
+    ]},
+    {t:'项目服务与原生宿主', d:'gateway / planner / core / webui 为项目四层；apps 兼容层已弃用；WebUI-TLS 与 DSH 原生 Web 宿主属于部署侧接入，不改变四层业务职责', s:'ok', k:[
+      {t:'gateway 网关 8001', d:'入站/出站'},
+      {t:'planner 调度器 8000', d:'后台（禁 import dsh.llm 大模型库）'},
+      {t:'core 核心 9000', d:'LLM（大模型）调用'},
+      {t:'apps 前端agent（临时，已弃用）', d:'手搓的临时前端 agent，无有价值产物', s:'no', k:[
+        {t:'现状', d:'apps/app.py AgentSession 纯文件留档（AgentStore JSONL）；runner.run_turn 走 core /v1/llm/chat；build_system_prompt 硬编码角色B人设+纪律；session_id=agent_qq_{owner_qq}'},
+        {t:'✅ 已定稿：弃用，复用 DSH 原生 agent', d:'不再继续自研 apps；运维会话挂 DSH preset（@deepseek-ai/dsh-persona）+ 我们套角色卡与归档', s:'ok'},
+      ]},
+      {t:'webui 管理界面 3080', d:'管理界面'},
+    ]},
+    {t:'前端 / 展示侧', d:'IM 端之外，人机交互的另一半；DSH 必须接，酒馆可选', s:'ok', k:[
+      {t:'webui 控制台', d:'配置管理 / 审查黑话 / 管理卡（3080 本机密码；8443 公网令牌）', s:'ok', k:[
+        {t:'Vue 控制台', d:'已完成本地整合和关键流程验收；角色、账号、流、记忆/心事、画像、学习、插件、状态/生活、观测、Tavern 导入和 preset 快照均有页面。历史“Preact+htm 重做”描述已过时。', s:'ok'},
+        {t:'可配置项', d:'聊天流设置、好感上下限、时段表、黑白名单、模型档案等，全在控制台'},
+      ]},
+      {t:'DSH Web（必须接）', d:'前端 agent 的载体；独立部署、用户自己填 API key、流式是 DSH 自带的，不经过我们 core', s:'ok', k:[
+        {t:'为什么必须接', d:'不接就没有前端 agent，所有配置都要自己手调，没法 debug、没法配'},
+        {t:'插件生态反哺', d:'DSH 本身的插件生态能反过来喂我们这个项目——接 DSH 不是单向消耗，是借力', s:'ok', k:[
+          {t:'反哺方向', d:'DSH 的插件/工具/面板可以直接给我们的 agent 用，省掉自研一大块'},
+        ]},
+        {t:'定位', d:'既满足我（部署者）调试、配置、调设置的需求；也靠 DSH 插件生态反哺项目能力'},
+        {t:'我们只对接', d:'只留接口/入口链到 DSH、导入角色卡等；不接管它的 LLM 调用'},
+        {t:'部署与 key 归用户', d:'DSH 的部署和 API key 都是用户自己填的（软件原有功能），跟本项目无关'},
+      ]},
+      {t:'RP 角色扮演（临时应急）', d:'拿不出手的自娱小项目，只为满足私聊文爱/文案需求；将来被酒馆取代', s:'warn', k:[
+        {t:'来源', d:'我很早自己搞的本地小项目（MYDS 语义迁移），只做了个微薄网页'},
+        {t:'为什么留着', d:'IM 里玩角色扮演/文案不方便（没有重说、继续说），所以应急用'},
+        {t:'将来归宿', d:'✅ 已定：不发展它；直接部署酒馆（SillyTavern），从链接跳酒馆玩', s:'ok'},
+      ]},
+      {t:'酒馆（可选亮点）', d:'独立部署、用户自己填 API key、流式是酒馆自带的，不经过我们 core；我们只对接=导入酒馆卡。✅ 已定（2026-11-02，TAVERN_IMPORT_DESIGN）：正式功能 + GitHub 对外亮点，阶段 4 之后做', s:'ok', k:[
+        {t:'核心价值', d:'别人导入=换皮；我们导入=把酒馆养熟的人格放进「一账号多卡 + 多用户共享」生态。酒馆是 1 用户×1 卡×1 网页，我们是 1 账号×N 卡×N 流，一群人各玩各的', s:'ok'},
+        {t:'同构转译（已核实）', d:'酒馆侧能拿到的正好是我们最小核缺的，且数据结构同构：Character Card V2 公开 spec，记忆生态本就是摘要化+向量化', s:'ok', k:[
+          {t:'角色卡 → personas.persona_text', d:'description + personality + first_mes（+system_prompt）拼成人设；Character Card V1/V2 JSON 直接映射'},
+          {t:'世界书 → persona_slang', d:'character_book.entries[].keys → 触发词，content → 内容，priority → 优先级；完全复用黑话库管道，是「可检索知识条目」不是并进人设的次品'},
+          {t:'记忆摘要 → memory_summaries', d:'summary / Data Bank（向量）→ 摘要；流维度留 NULL（不假设用在哪），流绑定事后热插拔'},
+        ]},
+        {t:'IM 表达适配（关键）', d:'酒馆卡人设常是网页 RP 长文写法，IM 是碎片短消息。导入时自动追加「IM 表达风格」提示（拆短句、不刷屏、像真人打字）并让用户确认；这是形式适配不是内容损，人设/性格/记忆全保留', s:'ok'},
+        {t:'导入入口（WebUI）', d:'上传 PNG 卡面 / JSON → 解析三段 → 预览（人设+知识条目数+摘要数+「IM 风格已适配」提示）→ 用户确认 → 落 personas + persona_slang + memory_summaries → 提示去流绑卡界面插卡', s:'ok'},
+        {t:'对外叙事（GitHub 亮点）', d:'①把酒馆玩熟的人格整卡搬进 IM；②一账号十几卡、一流一卡；③同一个 bot 好朋友一起玩；④世界书=黑话库；⑤「卡+摘要」最小核让重资产可插拔可迁移', s:'ok'},
+        {t:'部署与 key 归用户', d:'酒馆的部署和 API key 都是用户自己填的，跟本项目无关'},
+        {t:'不做', d:'跑团 KP 仅设想、不做实时同步（只做一次性导入）、PNG tEXt 首版可选（JSON 先做）', s:'warn'},
+      ]},
+    ]},
+    {t:'角色卡记忆 5 类', d:'', s:'ok', k:[
+      {t:'fragment 碎片', d:'临时 3 天 TTL（存活期）'},
+      {t:'summary 摘要', d:'长期，衰减沉底不删'},
+      {t:'pending 心事', d:'✅ 已定稿：与摘要脱钩，独立判断「想说没说」（不打 importance 分），带 outlet 出口意向，说出口那条才销账（MEMORY_RECALL_REBUILD §2）', s:'ok'},
+      {t:'diary 日记', d:'独立表 persona_diary（日记表）'},
+      {t:'ops 运维', d:'ops_memories（运维记忆表）'},
+    ]},
+    {t:'我与运维（身份拆两半）', d:'owner_qq 已拆分：只留「卡我」语义，其余挂运维标记', s:'ok', k:[
+      {t:'卡我 owner_qq', d:'personas 表新增 owner_qq 列；「这张卡认定谁是我」，卡级不是全局', s:'ok', k:[
+        {t:'proactive 主动开口目标', d:'卡主动找谁说话，以卡我为准（不再是全局 owner_qq）'},
+        {t:'我身份提示', d:'prompt 告诉 LLM「这是我私聊」（人格语义，非权限）'},
+      ]},
+      {t:'运维标记', d:'chat_stream_settings 里 chat_type=agent 的那行；前端可配置、全局唯一', s:'ok', k:[
+        {t:'收编所有运维功能', d:'ChatOps 敏感工具（查/改配置、改画像、拿文件）、#agent/#rp/#入口 的 IM 侧鉴权'},
+        {t:'允许不配置', d:'不配置就不能在 IM 上碰任何运维相关功能'},
+        {t:'与卡我分开', d:'运维标记 ≠ owner_qq；一个是运维权限，一个是人格归属'},
+      ]},
+      {t:'system.owner_qq', d:'废弃：卡我 + 运维标记已分光它的活，不留全局我格子', s:'no'},
+      {t:'白名单 = 账号级', d:'黑白名单管「哪些群/私聊的消息落库（聊天记录）」——账号级，保持不变；卡的读写范围靠插卡绑定（persona_scopes），不是另一套白名单', s:'ok'},
+    ]},
+    {t:'溯源核实（底层机制）', d:'默认铁律：凡是大模型加工过的重资产，都必须带溯源原文', s:'ok', k:[
+      {t:'默认必须溯源', d:'摘要、日记、碎片升级、黑话、画像、兴趣点、表达……所有「大模型加工过」的产物，写库时必须带溯源原文，不是可选项', s:'ok'},
+      {t:'溯源字段', d:'source_msg_range 原文区间 / first_msg_at 首条时间 / last_msg_at 末条时间 / target_id 来源会话', s:'ok'},
+      {t:'bot 自己核实', d:'bot 读记忆时觉得信息不够，或被质疑「你是不是记错了」，就得顺着链接去核实真实原始消息', s:'ok'},
+      {t:'前端查询也要', d:'后续前端重做后，我要能在前端查这些词条/画像「是怎么来的、基于哪条消息学的」', s:'ok'},
+      {t:'留档铁律（并列）', d:'记忆/心事/日记只软过滤、永不物理删除；48h/3天TTL 只影响进不进候选池，记录永久留库可查', s:'ok'},
+    ]},
+    {t:'角色卡资产', d:'可空、空了也不影响对话；全部需溯源（链回原始依据）', k:[
+      {t:'画像 user_profiles / profile_facts', d:'用户画像表 / 画像事实表；每个 fact/tag 溯源它基于哪条消息'},
+      {t:'好感 affection_history', d:'好感流水表（0-100 绝对坐标，按用户可配上下限）', s:'ok'},
+      {t:'好感分数怎么用', d:'✅ 已定：直接定义 LLM 对回复目标的态度——满分=百依百顺，零分=刻薄近乎仇恨；按分数对应态度说话，不做额外产出。低好感用户画像不必求准。', s:'ok'},
+      {t:'兴趣点 persona_interest', d:'✅ 已定：accuracy/valence/strength 三字段，打分写提示词塞旁路扩展；表未建（实现待做）；溯源它基于哪条消息', s:'ok'},
+      {t:'黑话 persona_slang', d:'卡×群黑话表；溯源学自哪条消息'},
+      {t:'自动回复 auto_reply_texts', d:'✅ 已恢复：自动回复识别学习表（行为学习已砍，但这张表归自动回复识别，不是行为学习）', s:'ok'},
+      {t:'表达 profile_facts(tag)', d:'画像事实表的 tag（标签）；溯源学自哪条消息'},
+    ]},
+    {t:'订阅方向', d:'会话窗口 × 会话窗口', s:'ok', k:[
+      {t:'私聊订群', d:'保留 —— 角色B旁观评论', s:'ok'},
+      {t:'群订群', d:'保留 —— 跨群小团体', s:'ok'},
+      {t:'私聊订私聊', d:'删 —— 无意义', s:'no'},
+      {t:'群订私聊', d:'✅ 已定：走记忆召回（隐私）', s:'ok'},
+    ]},
+    {t:'空间与日记', d:'', s:'ok', k:[
+      {t:'定时日记', d:'每天 23:00 一篇'},
+      {t:'冲动日记', d:'✅ 已定：碎片判断时一并判断要不要发空间，不限一天一篇', s:'ok'},
+      {t:'公开审查', d:'和谐后发'},
+      {t:'发说说', d:'设计已定，gateway outbox 未迁（实现待做）', s:'ok'},
+    ]},
+    {t:'可观测性（心跳指标 + 告警）', d:'✅ 已定方向：给系统装心率监护仪；日志是事后尸检，指标是主动盯你', s:'ok', k:[
+      {t:'事件表 event_log', d:'结构化事件，按条存：时间/号/流/事件类型/结果/关键字段；能回查任意时刻发生了什么'},
+      {t:'指标表 metric_hourly', d:'每小时聚合一行（我拍板：按小时计，一天太长）；不存原文，只存计数'},
+      {t:'指标四组', d:'', s:'ok', k:[
+        {t:'A 消息生命线', d:'入站数/出站数/SKIP数/@回复数/poke事件数/回戳数/文本回复数'},
+        {t:'B 记忆与学习', d:'summary生成数/碎片升级数/心事生成与消解数/日记生成数/黑话学习与审查数/画像增量数'},
+        {t:'C 花钱与健康', d:'token消耗(按purpose分)/LLM失败数/熔断次数/识图调用与失败数/proactive开口数/订阅推送数'},
+        {t:'D 账号与流', d:'每号活跃流数/静默流数/防抖批次数与批次大小'},
+      ]},
+      {t:'告警三模式（变动检测）', d:'', s:'ok', k:[
+        {t:'突然归零', d:'某指标24h前有值、现在0 → 网关/core/某链路断'},
+        {t:'突然暴涨', d:'某指标比昨天 >3倍 → 死循环烧钱/触发判断坏'},
+        {t:'长期不变', d:'连续3天同一值 → 该跳的心跳不跳了'},
+      ]},
+      {t:'告警出口', d:'只落 alert_log 表 + 前端红点，不让 bot 主动私聊刷屏', s:'ok'},
+      {t:'心跳周期', d:'每 5 分钟聚合一次进 event_log；每小时归并进 metric_hourly', s:'ok'},
+      {t:'具体计数点', d:'✅ 已定稿（2026-11-03）：能记的全记——目前所有有增量的东西都进计数点清单；不追求完美，先全量覆盖，不因"待定"而漏记', s:'ok'},
+    ]},
+  ]},
+
+pending: [
+],
+
+todo: [
+  {t:'分页读文件（独立功能）', d:'✅ 已实现（2026-11-10 复核）：repositories.read_file_page(file_id,offset,limit) + pipeline 工具调用链完整；file_text.py MAX_FILE_TEXT_CHARS=50000 兜底。上下文只带前 2000 字预览，bot 按需分页读全文。'},
+  {t:'引用回复带出被引用内容（治本）', d:'✅ 已实现（2026-11-10 复核）：gateway/store.py fetch_reply_content 投递前回填 reply_content，core/build.py 注入被引用正文，含引用文件场景。'},
+  {t:'空间冲动日记触发源（改代码）', d:'✅ 本地已接（2026-11-11）：topic_windows 本地关注判断同次输出 share_intent/share_text，topic_store 事务写入本地卡日记与逐条原文来源；不再查询 qzone 订阅方。空间绑定及公开审查仍控制后续发布。'},
+  {t:'冲动日记去掉「一天一篇」限制', d:'✅ 已实现（2026-11-08 复核）：迁移 012_diary_impulse_unique.sql 已重建 persona_diary 去掉 UNIQUE(persona_id,diary_date,source_kind)；write_diary 用 INSERT OR IGNORE（无 UNIQUE 时不跳过）。一天可多篇。'},
+  {t:'老定时总结退役', d:'✅ 已完成（2026-11-11）：旧自然时点 summary 函数已移除；替代的 daily_memory 已接通50/200条或6小时触发，详见 DAILY_SUMMARY_LOCAL_IMPLEMENTATION_20261111.md。'},
+  {t:'表达学习单元结构（实现）', d:'✅ 已实现（2026-11-10）：迁移 018 + learner 每流 20 条批处理；兼容调用 B 的 slang/reply_to/behavior 分组和统一 units 格式，behavior 归为 interaction；审批、向量召回、软退役、来源溯源和显式流资产导入均已接线。'},
+  {t:'兴趣点三字段落地', d:'✅ 已实现（2026-11-10）：调用 C 每卡每天一次，素材仅取当天带溯源的日记、心事和记忆摘要；保存 accuracy/valence/strength，兼容 topics/旧 interests 响应并提供 WebUI 只读查看。'},
+  {t:'热聊打分「群订群」（实现）', d:'✅ 本地入口已接（2026-11-11）：显式订阅源群，按接收群卡的人设、已有记忆、兴趣及接收会话最近10条语境独立判断；达到8回读50条源群原文后分享，关窗记在接收群；与群自身参与意愿判断分开。'},
+  {t:'黑话去重键文档修正', d:'✅ 已完成（2026-11-08 复核）：PERSONA_SESSION_AND_FRAGMENT §4.2/§5.2 已统一为 UNIQUE(persona_id,group_id,word)，与 007 迁移一致；§4.2 标注「设计定稿」、§5.2 明确「无需改表或迁移」。'},
+  {t:'好感重置 + 迁移 004~009 执行', d:'本地已就绪，服务器执行前先出清单给我确认。（2026-11-07 核查：待我拍板，属数据迁移不擅自动）'},
+  {t:'好感阈值统一（代码问题）', d:'✅ 已实现（2026-11-08 复核）：pipeline.py:666-672 _affection_hint 恒返空并注释说明「八档是唯一权威口径」；domain/prompt.py:299-303 用 affection_prompt 八档注入。旧 80/65/30 硬编码通道已整体停用，两套判定不再并存。'},
+  {t:'识图故障 R1–R4 本地修复', d:'✅ 已修（2026-11-10 复核）：R1 enrich 回填 images_json、R2 supervisor.start() 启动 VisionWorker、R3 gateway 投递前调用 enrich 并回写库、R4 stage_model 独立视觉档回落；相关行为由 VisionWorker/enrich 与现有测试覆盖。'},
+  {t:'personas 加 owner_qq 列', d:'✅ 已实现（2026-11-10 复核）：010 迁移提供 personas.owner_qq；planner 仓储统一按 persona_id 读取，私聊流、状态判断、心事、主动开口和 B 站推送都带卡我归属。'},
+  {t:'owner_qq 职责迁移', d:'✅ 已实现（2026-11-10）：私聊鉴权只接受运维标记或当前流绑定卡的 personas.owner_qq；主动开口/B 站任务枚举同账号有效私聊流，按 persona_id×owner_qq 隔离状态与目标；流目标不等于卡我时静默跳过，并有发送前归属复核。'},
+  {t:'system.owner_qq 移除', d:'✅ 已实现（2026-11-10）：新运行路径不读取全局我字段，配置字段注册表不再展示；旧 system.json 遗留键会被 ConfigLoader 过滤，仅保留非身份系统配置，权限统一走卡我/运维标记。'},
+  {t:'可观测性实现', d:'✅ 已实现（2026-11-10）：016 迁移提供 event_log/observability_cursor/metric_hourly/alert_log；planner 每 5 分钟增量采集并按小时归并消息、记忆、日记、画像、黑话、token、活跃/静默流与防抖批次；支持归零/暴涨/长期不变/日记静默告警及 firing→resolved 留档；WebUI 提供只读指标与告警页。缺迁移或单次写入失败时安全降级，不阻塞主链路。'},
+  {t:'v3 漏迁 reply_only_at 补闸门', d:'✅ 已实现（2026-11-07 核查确认）：repositories.get_stream_reply_only_at + pipeline.py:523 闸门都在。老 planner 流级开关对账已无遗留。'},
+  {t:'记忆召回重构（实现）', d:'✅ 已实现（2026-11-10）：长期记忆与心事召回按 persona_id+bot_uin 隔离；017 迁移为 pending 增加 outlet（private/qzone/both），旧记录默认 private；普通私聊/proactive 过滤为 private/both，空间只取 qzone/both。群聊心事仅按卡 owner_qq 路由到我私聊。说出口后软过滤、写结果 summary，并保留 caused_by_memory_id + source_msg_range 因果链。'},
+  {t:'心事因果链查询工具', d:'✅ 已实现（2026-11-07 核查）：query_pending_causal 已注册——contracts/v1/core.py:115 类型、services/core/auxiliary.py:132 分派、services/core/think.py:459-466 工具定义。'},
+  {t:'向量召回（阶段4）', d:'✅ 已实现（2026-11-10 本地复核）：pipeline 对当前消息取 embedding，domain.memory.rank_by_embedding 按语义相关性+时间衰减排序；importance 不参与阶段4排序，单条缺向量单独降级。'},
+  {t:'proactive 兜底参数（实现）', d:'✅ 已实现（2026-11-10 复核）：积压阈值、想念度排期、指数退避、每日产物/评估上限、逐条消解与卡我校验均已接线；主动任务按账号内私聊卡枚举，不依赖全局 owner_qq。上线前清存量心事属于数据操作，不在本地代码改动中执行。'},
+  {t:'第三方插件兼容（路径 A：preset 静态快照）', d:'部分实现（2026-11-14 对账）：手动 JSON 快照、定时快照插件（029）及 WebUI 只读历史入口已在本地完成，按账号×角色×实际绑定会话过滤并保留失败详情；第三方原生 preset 格式适配、安装核对和反向会话导入仍待外部契约。路径 B（MCP 实时）留后续可选。'},
+  {t:'前端整个重做（排最后）', d:'✅ Vue 控制台本地整合完成，旧 585 项数字不再作为当前回归结论：角色、账号、会话、记忆/心事、画像、学习、插件、状态/生活、观测、Tavern 导入和手动 preset 快照均已接入。最新 799 项基线回归通过；加入 QZone 社交字段后的 811 项日志仍有 5 个 golden 失败和 2 个测试夹具错误，详见 LOCAL_CODE_DOC_RECONCILIATION_20261114.md。'},
+
+// ============ 2026-11-07 核查中新发现的缺陷（已实现功能有 bug）============
+
+  {t:'【缺陷】戳一戳判定不严：群友戳群友也触发本号', d:'🔴 我 2026-11-07 反馈：群聊里 A 戳 B（与 bot 无关），bot 也会回戳或回应，没判定这个戳是不是戳他。根因已定位：pipeline.py:379 写的是 if target_user_id and target_user_id != scope.uin: return —— target_user_id 为空字符串时 falsy，条件整体短路为 False，于是不 return、当成"戳我了"。而 parse.py:78 的 target_user_id 取自 payload["target_id"]，消息协议 各实现字段名不一致，消息协议端 若未上报 target_id 就是空。注：parse.py:99 的 is_at_bot 其实算对了（空→0=不是戳我），但 pipeline 没读它，自己又算了一遍且算错了。2026-11-06 修的是 sender_id（操作者），本次是 target_user_id（被戳者），两个字段不同所以上次没覆盖。修复三选一：A=pipeline 直接读 is_at_bot 不复算（推荐）；B=379 行改成 not target_user_id 也 return（改动最小）；C=parse 层补齐字段取值使永不为空（需先确认真实报文）。影响：群聊任意两人互相 poke 都可能触发 bot，且污染 poke_tracker 高频计数。'},
+
+  // ============ 2026-11-07 新增（角色状态系统 + 判断器 + 学习 + WebUI 补齐）============
+
+  {t:'【插件】promptSections 接线（地基）', d:'✅ 本地已实现并复核（2026-11-10）：manager 收集启用插件片段，pipeline 经契约传给 Core，domain.prompt 按优先级注入；无片段时保持既有提示词。专项及全量回归通过。'},
+  {t:'【插件】异步钩子入口', d:'G3（异步钩子）：现有 on_reply_ready 仍是同步 run_hooks。异步判断器（B 组）需要后台触发点——待 B 组开工时一并做（前置依赖，现在做完无消费方）。（2026-11-08 复核：仍未做，属 B 组前置）'},
+  {t:'【插件】on_send / on_persona_load / on_memory_write 接线', d:'✅ 已实现（2026-11-08）：pipeline._send_outbound 触发 on_send、pipeline._persona 触发 on_persona_load（persona_extra 追加）、supervisor._run_memory_write_hooks 触发 on_memory_write（summary/pending/fragment/升级 4 个写点）。全部错误隔离，无插件声明零影响。'},
+  {t:'【状态】persona_status 插件（三条数值）', d:'本地已补齐并接入 Vue（2026-11-12）：三条状态按真实经过时间投影，查询不写库，多账号共卡不重复累计；精力只由时间轴活动改变，聊天不扣精力；欲望仅卡我私聊，满足事件减60且同事件只结算一次。生活页已展示状态和变化原因；夜间主动窗口、欲望概率曲线和连续六段欲望表现已接入，本地真实账号启用与消息验收未执行。'},
+  {t:'【状态】通用可配置私聊进度', d:'✅ 本地机制与验收完成（2026-11-10），默认关闭，不内置业务指标或情景演出文案，不新增总体亲密值。仅当前账号×角色卡×卡我私聊，完整发送成功后后台模型给非负增量、累计上限100；原文留档、同批次防重、事务、权限撤销检查及可见错误。迁移023仅临时库验证；配置与限制见 PRIVATE_PROGRESSION_HANDOFF_20261110.md。'},
+  {t:'【状态】精力影响行为的四象限', d:'✅ 本地已实现（2026-11-10）：features.proactive_state 默认关闭，复用现有疲倦档位和好感亲近档位决定陪伴/安静/分享/社交距离；沿用心事数量、时间窗、热聊和限额护栏；状态插件关闭则恢复原主动规则；SKIP 不对外发送。'},
+  {t:'【状态】生活时间轴 persona_timeline', d:'✅ 本地已实现并接入 Vue（2026-11-10）：迁移019，按账号×卡留档；念头/戳事件/视频/空档可选补写；空档超过4小时每小时提醒，最近5条防重复，夜间尊重休息。事件幂等、溯源、时间轴与心事互引，戳/空档不产心事；生活页展示时间轴、状态和视频处理记录。'},
+  {t:'【状态】视频消费·按需实时刷（取代视频池）', d:'✅ 本地已实现并用假接口验证（2026-11-10）：三类事件触发实时搜索、挑1至2条、取得字幕或转写后才消化，保存标题链接及原文到时间轴/心事。迁移020记录事件与每账号×卡每日最多3次尝试，不建视频池；features.video_on_demand 默认关闭并要求 timeline。真实 transport 尚待我自行服务器测试。'},
+  {t:'【判断器】调用 A：状态+画像（Flash，高频）', d:'✅ 本地已补齐并验证（2026-11-10）：经 Core 回复档异步判断；状态仅在实际回复后变化，画像涵盖当前话题参与者并按原消息校验归属。卡我私聊才读写欲望，群聊屏蔽。兼容缩写/旧字段，事务写入、原文溯源、并发增量、热关闭丢弃、连续失败三次暂停五分钟及管理端告警已落地。'},
+  {t:'【判断器】调用 B：学习模块（Pro，20条批）', d:'✅ 本地已实现（2026-11-10）：黑话+表达+互动习惯统一合并。攒 20 条消息按流触发，兼容输出 {"slang":[...],"reply_to":[...],"behavior":[...]} 与统一 units，流向 pending 等待我审批；behavior 归为 interaction。'},
+  {t:'【判断器】调用 C：兴趣点（Flash，每天一次）', d:'✅ 本地已实现（2026-11-10）：每天每卡一次，素材只用当天带溯源的日记、心事和记忆摘要，兼容输出 {"topics":[{"topic":"...","accuracy":8,"valence":"positive","strength":7}]}；失败留运行状态并安全降级。'},
+  {t:'【判断器】主回复去除 [PROFILE]/[MOOD] 内联', d:'✅ 本地已实现并复核（2026-11-10）：主回复不再要求输出画像/状态标记，动作管道不再据其写库；旧标记解析只用于防泄漏清理。状态与画像由异步调用 A 完成。'},
+  {t:'【发言节制】日常档/文爱档提示词', d:'✅ 本地已实现并复核（2026-11-12）：日常档沿用设计原文并限制最多3行；私聊+卡我+欲望≥70切换文爱档，沿用“现在是私密时刻，可以持续发消息、分多条表达，不用等他回应”并限制最多12行。'},
+  {t:'【发言节制】文爱档区分互动/夜袭', d:'✅ 本地已实现并复核（2026-11-12）：普通私密互动提示写一段后停下等回复；凌晨窗口在我10分钟无回复且欲望概率命中时进入夜袭提示，发送层最多12行；未改生产配置。'},
+  {t:'【私聊】热聊状态防打断', d:'✅ 本地已实现（2026-11-10）：私聊入站立即置位、成功出站续期，十分钟无互发退出；按账号×流×卡隔离。冲动先留带原文和因果来源的心事，热聊中不推送、不建延迟队列；主动兜底发送前复核。发送失败不消解，Gateway 确认逐层透传。'},
+  {t:'【群聊】三档模式（活跃/提名/仅@）', d:'✅ 本地已实现并复核：pipeline._group_chat_mode 与 _evaluate_trigger 已支持 active/nominate/silent 及按群覆盖，被@保持强触发；旧 reply_only_at 兼容保留。旧零匹配结论已过时。'},
+  {t:'【插件】热重载：一键开关 + 配置热生效（成熟产品要求）', d:'本地可靠性已补齐并接入 Vue（2026-11-10）：默认关闭与显式启用持久化、设置热更新、依赖级联确认、工具与任务冲突拦截、完整错误栈、多服务运行报告、异步任务取消及关闭后丢弃结果；关闭戳/防复读/角色扮演/自动回复/识图不会被旧内置逻辑偷偷恢复。563项全量通过，浏览器管理页已验收；详见 PLUGIN_RELIABILITY_LOCAL_20261110.md。'},
+  {t:'【WebUI】角色卡日记入口', d:'✅ 已实现并复核（2026-11-10）：WebUI 提供 /diaries 独立页与 GET /api/personas/{persona_id}/diaries，只读读取 persona_diary，按 persona_id 隔离，并展示日记正文、空间版正文及溯源字段；无表时安全返回空列表。专项测试 tests/test_webui_diaries.py 5/5 通过。旧的 2026-11-07「未实现」结论已过时。'},
+  {t:'【WebUI】黑话审批页面', d:'✅ 已实现（2026-11-10）：学习与兴趣页按账号/角色查看、批准或拒绝黑话队列，保留来源展示。'},
+  {t:'【WebUI】好感度明细查看', d:'✅ 已实现（2026-11-10）：用户画像页按卡×账号展示称呼来源与好感数值变化，独立错误态不把加载失败伪装成无数据。'},
+  {t:'【WebUI】称呼并入用户画像', d:'✅ 本地实现与验收完成（2026-11-10）。我确认新增persona_id，旧记录原样保留为未归属，新记录按卡×号×IM×场景隔离，画像页合并次数并标来源。沿用括号备注剥离与占位过滤，取消长度上限，不因长名而丢弃或截断，原名及消息留档。迁移022仅在临时库验证，真实库未执行；见 NICKNAME_SCOPE_LOCAL_20261110.md。'},
+  {t:'【WebUI】页面硬编码假数据清理', d:'✅ 已实现（2026-11-10）：Vue 页面全部通过 WebUI API 读取临时/真实配置，旧静态示例页不再作为新入口；关键失败显示页内错误，不把空白当无数据。'},
+  {t:'【学习】统一学习单元表（迁移013）', d:'✅ 本地已实现（实际迁移号 018，2026-11-10）：统一学习单元、审批、显式跨卡导入、流隔离、向量召回、使用明细及月度软退役。详见 P2_LEARNING_LOCAL_IMPLEMENTATION_20261110.md。'},
+],
+
+// 功能清单：全功能盘点，防止重构/迁移时漏迁。
+// 每项：t=功能名, s=设计状态(ok定稿/warn待拍板/no否掉), impl=实现状态(done已做/partial部分/todo未做/online仅线上),
+//       trig=触发, out=产物, store=存哪, use=谁用在哪, end=收尾/落档。
+features: [
+  {t:'消息回复（主链路）', s:'ok', impl:'done', trig:'IM 群聊/私聊入站', out:'文本回复（可含图/表情/引用）', store:'chat_messages 落库', use:'核心对话功能，所有学习/记忆的原料', end:'冷却 + 去重'},
+  {t:'文件读取（分页读文件）', s:'ok', impl:'done', trig:'入站含文件消息', out:'文件正文文本', store:'chat_messages.file_text', use:'bot 读文件回答问题', end:'上下文带前2000字预览，按需分页读取全文'},
+  {t:'图片识图（视觉分析）', s:'ok', impl:'done', trig:'入站含图片（md5去重）', out:'图片描述+情绪tag+是否表情包', store:'image_analysis 表（planner写）', use:'回复时带进上下文（build_user_content 读 analysis）', end:'md5 去重，不重复分析；R1–R4 已修（enrich 回填、Worker 启动、enrich 调用、视觉档回落）'},
+  {t:'联网搜索', s:'ok', impl:'done', trig:'我问「搜索/查一下」+ 工具调用 web_search', out:'搜索结果文本', store:'不落库（会话内）', use:'回复时提供实时信息', end:'用后即弃'},
+  {t:'刷B站（bili）', s:'ok', impl:'done', trig:'三类事件按需触发，旧固定任务退役', out:'带标题链接的观后感', store:'时间轴、心事及尝试记录', use:'自然召回或主动分享', end:'默认关闭；无转写不编造；每日三次尝试护栏'},
+  {t:'IM 自动回复识别', s:'ok', impl:'done', trig:'入站 message（私聊为主）', out:'direction=auto_reply 标记', store:'chat_messages.direction', use:'gateway 不投递 planner，避免循环回复', end:'学习表记住原文；探针判据权威'},
+  {t:'戳一戳（poke）', s:'ok', impl:'partial', trig:'入站 notice/poke', out:'回戳或文本回复（20%概率）', store:'不落库（事件）', use:'互动', end:'冷却 + 概率'},
+  {t:'心事簿（pending）', s:'ok', impl:'done', trig:'摘要时独立判断「想说没说」并写 outlet', out:'pending 心事（private/qzone/both）', store:'memory_summaries(kind=pending,outlet)', use:'三出口：私聊召回/空间发文/proactive；空间发布有显式闸门', end:'发送成功后软过滤并降级 summary + 因果链'},
+  {t:'定时日记', s:'ok', impl:'done', trig:'每卡每天 23:00', out:'日记一篇（max600字）', store:'persona_diary', use:'空间发文 + 本地留档', end:'同卡跨账号只生成一次；本地永久留，生产空间发布协议已验收，自动发布闸门仍按配置关闭'},
+  {t:'冲动日记（空间）', s:'ok', impl:'done', trig:'碎片判断时一并判断「要不要发空间」', out:'分享冲动', store:'persona_diary（qzone）', use:'空间发文', end:'多篇留档与发送幂等已接；生产协议和带标记空间可见性已验收，但自动发布闸门仍关闭，不能把一次验收当作持续自动循环完成'},
+  {t:'QZone 好友互动', s:'ok', impl:'done', trig:'空间循环读取好友动态与本账号说说评论', out:'点赞、普通评论、楼中楼回复', store:'qzone_social_actions / qzone_social_state', use:'好友空间互动，不写角色记忆库', end:'代码、隔离专项和生产带标记可见性已通过；验收后 social_enabled 恢复关闭，长期运行观察待后续开启'},
+  {t:'订阅广播/轮询（gossip）', s:'ok', impl:'partial', trig:'订阅方×源群独立轮询，一圈后默认休息10分钟', out:'短期关注判断，不保存分数', store:'025窗口/逐条原文/独立进度/发送结果；关窗落接收流summary', use:'私聊与群订群分享；普通回复可见活动窗口最新原文', end:'本地业务链已接：7关注、8分享、低于7关窗；管理页和接口已构建，窄屏视觉验收、真实迁移和真实出站仍待完成'},
+  {t:'本地关注（fragment轨）', s:'ok', impl:'done', trig:'群聊15条/20分钟，达到7开窗，45条原文作引子', out:'持续窗口与同次日记意愿；分数用后即弃', store:'topic_windows/topic_window_sources；关窗summary重要度固定7', use:'本地卡长期记忆，与日常摘要按来源去重', end:'低于7不开窗不落碎片；关窗整理完整原文，失败不丢进度；旧碎片保留兼容，不再由旧分发链运行'},
+  {t:'摘要（summary）', s:'ok', impl:'done', trig:'群聊200条/6h、私聊50条/6h；入站后台检查+60秒冷会话检查', out:'SKIP或长期摘要，心事独立判断', store:'memory_summaries + memory_track_cursors + memory_summary_runs/sources（024）', use:'召回注入；管理台回查实际原文', end:'本地已验；新入站保存卡归属，摘要/心事/来源/进度原子提交；跨轨去重；旧无归属原文保留不猜测，真实迁移未执行'},
+  {t:'表达学习（统一单元模型）', s:'ok', impl:'done', trig:'每流累计20条消息，调用 B 异步提炼', out:'接话对/话题对/互动习惯对', store:'persona_learning_unit + learning_unit_use', use:'few-shot 注入，每次取 N 条（默认6）；向量失败按近期使用次数回落', end:'审查批准才生效；软退役永不删；流资产需显式导入'},
+  {t:'黑话学习', s:'ok', impl:'done', trig:'调用 B 每流20条批处理', out:'候选词+含义', store:'persona_learning_unit（unit_kind=slang）+兼容旧 persona_slang', use:'审批后注入', end:'旧生产循环已退役；旧资产兼容读取，拒绝进黑名单'},
+  {t:'行为学习（互动习惯对）', s:'ok', impl:'done', trig:'调用 B 每流20条批处理中归一化 behavior', out:'对方做了什么 → bot 怎么回应', store:'persona_learning_unit（unit_kind=interaction）', use:'跨会话说话习惯，如被调戏→回表情包', end:'不单独做模块；并入表达学习'},
+  {t:'窥屏 peek', s:'no', impl:'-', trig:'—（已否掉）', out:'—', store:'—', use:'私聊订阅群就是窥屏，peek 已被订阅替代', end:'—'},
+  {t:'兴趣点画像（三字段）', s:'ok', impl:'done', trig:'每天每卡一次的调用 C', out:'accuracy/valence/strength 三字段', store:'persona_interest + 来源范围', use:'群订分享判断和 WebUI 查看', end:'三字段、每日快照和90天半衰期读取已实现；只影响有效强度，不改历史原值或物理删除'},
+  {t:'好感度', s:'ok', impl:'partial', trig:'[MOOD] 旁路 + LLM ±5 打分', out:'好感分（0-100）', store:'affection_history + user_profiles', use:'直接定义 LLM 对用户的态度（满分百依百顺/零分刻薄）', end:'按用户可配上下限'},
+  {t:'运维记忆（agent）', s:'ok', impl:'partial', trig:'前端 agent 操作 + 定时兜底摘要', out:'运维记忆', store:'ops_memories', use:'运维会话召回', end:'定时摘要聚簇'},
+  {t:'记忆召回（向量）', s:'ok', impl:'done', trig:'回复时查 embedding', out:'相关记忆', store:'memory_summaries/persona_diary/ops_memories.embedding', use:'注入上下文', end:'聊天记忆、卡级日记和运维记录按权限统一召回；向量失败按时间降级，来源故障不拖垮主回复'},
+  {t:'角色卡管理（三表）', s:'ok', impl:'done', trig:'WebUI 操作', out:'卡本体/绑定/作用域', store:'personas/bindings/scopes', use:'流绑卡决定人设', end:'personas.owner_qq 已存在并参与卡我校验'},
+  {t:'可观测性（指标+告警）', s:'ok', impl:'done', trig:'planner 每 5 分钟采集、按小时归并', out:'四组指标 + 告警状态', store:'event_log / observability_cursor / metric_hourly / alert_log', use:'WebUI 只读指标与告警页', end:'归零/暴涨/长期不变/日记静默；缺迁移或写入失败安全降级'},
+  {t:'RP 角色扮演', s:'ok', impl:'done', trig:'RpCommand 命令', out:'角色扮演回复', store:'不落库', use:'临时应急', end:'唯一保留 warn 的主项'},
+  {t:'运维会话（agent 流）', s:'ok', impl:'partial', trig:'我在 DSH Web / IM #agent 入口对话', out:'命令执行 + 运维记录', store:'ops_memories（kind=ops, source_kind=agent）', use:'运维召回；套运维卡 roleB（persona_scopes agent 作用域）', end:'原生宿主、同源代理、同会话回忆、只读工具和 Gateway/消息协议 回执已做 Gateway 注入式生产验收；IM 客户端手动发起的完整体验和内部令牌加固仍未闭环'},
+  {t:'第三方 IM 插件兼容（角色卡带走）', s:'ok', impl:'partial', trig:'用户从 第三方 IM 插件 等插件切来/切去', out:'preset（persona.prefix 静态快照）', store:'我们库导出成 preset；对方会话记录反向导入', use:'对方 agent 读我们角色卡/记忆/好感', end:'手动与定时本地快照已实现；第三方原生格式、安装核对、反向会话导入仍待外部接口契约；B（MCP 实时）留作后续可选'},
+  {t:'酒馆导入（Tavern）', s:'ok', impl:'done', trig:'我在 WebUI 上传酒馆卡（JSON；PNG tEXt 可选）', out:'角色卡人设 + 世界书知识条目 + 记忆摘要 + IM 表达风格段', store:'personas + persona_slang + memory_summaries（流维度 NULL）', use:'把酒馆养熟的人格整卡搬进 IM；一账号多卡、一流一卡；GitHub 对外亮点', end:'V1/V2 JSON 预览确认、原件留档、未知字段保留、账号×卡隔离；PNG tEXt 仍是可选后续。'},
+  {t:'插件系统（dsh/plugins）', s:'ok', impl:'done', trig:'服务启动时自动加载项目根 plugins/ 目录', out:'能力注册 + LLM 工具 + 钩子 + 定时任务', store:'不落库（进程内注册表）', use:'新功能直接丢 plugins/ 目录即可，不碰核心代码；工具结果经第三段改写回传', end:'默认关闭/显式启用持久化、设置热更新、依赖级联确认、冲突拦截、完整错误栈、多服务运行报告和异步任务取消均已实现；Vue 管理页已验收。'},
+
+  // ============ 2026-11-07 新增 ============
+  {t:'角色状态·精力', s:'ok', impl:'done', trig:'时间轴写入时由大模型判断（不逐条消息判断）', out:'精力值 0~100', store:'persona_status（插件自带表）', use:'影响主动行为模式/心情/时间轴画风', end:'按真实时间投影；前端展示当前值与最近变化；查询不写库。'},
+  {t:'角色状态·心情', s:'ok', impl:'done', trig:'异步判断器调用 A（每条）', out:'心情值 0~100', store:'persona_status', use:'影响语气与表现（取代 affection_hint 临时情绪）', end:'前端生活页展示当前值与变化记录；后台写入保持溯源。'},
+  {t:'角色状态·欲望', s:'ok', impl:'done', trig:'时间累积+2/h、亲密对话、满足释放', out:'欲望值 0~100', store:'persona_status（persona_id×owner_qq，只对卡我）', use:'驱动私聊文爱档与夜袭', end:'只读查询按卡我隔离；群聊不读；满足事件减60且同事件只结算一次。'},
+  {t:'异步判断器·状态+画像（调用A）', s:'ok', impl:'done', trig:'私聊每条 / 群聊她回复的每条', out:'{"e":-1,"m":2,"d":4,"p":[...],"a":3}', store:'→ persona_status / user_profiles / affection_history', use:'取代主回复内联的 [PROFILE]/[MOOD]', end:'Flash 模型；异步不阻塞；失败数值不变'},
+  {t:'异步判断器·学习模块（调用B）', s:'ok', impl:'done', trig:'攒满 20 条对话', out:'{"slang":[...],"reply_to":[...],"behavior":[...]}', store:'→ persona_learning_unit（pending 待审）', use:'审批后注入', end:'Pro 模型；三者合并为学习模块'},
+  {t:'异步判断器·兴趣点（调用C）', s:'ok', impl:'done', trig:'每天一次（每卡，学习开关开启时）', out:'{"topics":[{topic,accuracy,valence,strength}]}', store:'persona_interest + learning_interest_runs', use:'内部判断该不该 push，绝不念账本', end:'回复档模型；素材只用当天日记+心事+记忆摘要；失败留状态并安全降级'},
+  {t:'生活时间轴', s:'ok', impl:'done', trig:'事件触发写入 + 空档超4小时提醒补写', out:'她编的日子（时间/标题/正文）', store:'persona_timeline（迁移019）', use:'纯前端展示 + 供语境，不驱动行为', end:'Vue 生活页展示时间轴、状态变化和视频记录；与日记区分，夜间尊重休息。'},
+  {t:'视频消费（按需实时刷）', s:'ok', impl:'done', trig:'三事件触发：①想找我没话头 ②聊天自然聊到 ③状态落到想瘫着看（零定时器）', out:'当下实时搜索→转写→消化→挑1~2个', store:'不建池子；写时间轴 + 心事簿（带标题链接）', use:'自然想说话才分享；当日最多3次软护栏', end:'取消 video_pool；无需 B 站账号，实时刷多少没关系；依赖 proactive 完整版'},
+  {t:'群聊三档模式', s:'ok', impl:'done', trig:'活跃=概率插话（现状）/ 提名=@或提名字 / 静默=仅@', out:'是否回复的决策', store:'planner 配置 group_chat_mode', use:'控制群聊参与度，治理话多连发', end:'被@一律回任何档位不例外；支持默认档位与按群覆盖'},
+  {t:'私聊热聊状态（防打断）', s:'ok', impl:'done', trig:'私聊互发消息时置位', out:'热聊标记', store:'scope.state（进程内）', use:'热聊中冲动升级触发→直接转心事，不打断对话', end:'超过10分钟没互发消息则退出'},
+  {t:'插件管理入口（WebUI）', s:'ok', impl:'done', trig:'WebUI 打开插件页', out:'插件列表+开关+配置表单', store:'读 manifest.describe() + configSchema', use:'我可开关插件、调插件数值参数', end:'Vue 统一入口已具备开关/普通字段与 JSON 复杂字段配置、级联确认、运行错误展示；本地浏览器验收通过。'},
+
+]
+};
+
+
+
+/* ============ 渲染逻辑（一般不用动） ============ */
+const $ = s => document.querySelector(s);
+const esc = s => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+let curChain = ARCH_DATA.chains[0].id;
+let drillStack = [];   // 钻取路径：node 数组
+
+function statusDot(s){ return {'ok':'<span style="color:var(--ok)">●</span>',
+  'warn':'<span style="color:var(--warn)">●</span>',
+  'no':'<span style="color:var(--no)">●</span>'}[s] || ''; }
+
+/* ---- 标签页 ---- */
+$('#tabs').addEventListener('click', e=>{
+  const t = e.target.closest('.tab'); if(!t) return;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  const v = t.dataset.view;
+  ['chains','tree','features','pending','todo'].forEach(x=>{ $('#view-'+x).style.display = x===v?'':'none'; });
+});
+
+/* ---- 链路栏 ---- */
+function renderChainBar(){
+  $('#chainbar').innerHTML = ARCH_DATA.chains.map(c =>
+    `<div class="chain-btn ${c.id===curChain?'active':''}" data-id="${c.id}">${esc(c.name)}</div>`).join('');
+}
+$('#chainbar').addEventListener('click', e=>{
+  const b = e.target.closest('.chain-btn'); if(!b) return;
+  curChain = b.dataset.id; drillStack = [];
+  renderChainBar(); renderFlow(); renderDrill();
+});
+
+/* ---- 链路主流程 ---- */
+function renderFlow(){
+  const chain = ARCH_DATA.chains.find(c=>c.id===curChain);
+  const lastIdx = chain.nodes.length - 1;
+  $('#flow').innerHTML = chain.nodes.map((n,i)=>{
+    const sel = drillStack.length && drillStack[0].t===n.t ? ' sel' : '';
+    return (i>0?'<div class="arrow">→</div>':'') +
+      `<div class="node${sel}" data-idx="${i}">
+         <span class="kids">${(n.k||[]).length? (n.k||[]).length :''}</span>
+         <div class="t">${statusDot(n.s)} ${esc(n.t)}</div>
+         <div class="r">${esc(n.r||'')}</div>
+       </div>`;
+  }).join('');
+}
+$('#flow').addEventListener('click', e=>{
+  const n = e.target.closest('.node'); if(!n) return;
+  const chain = ARCH_DATA.chains.find(c=>c.id===curChain);
+  drillStack = [chain.nodes[+n.dataset.idx]];
+  renderFlow(); renderDrill();
+});
+
+/* ---- 钻取详情 ---- */
+function renderDrill(){
+  const box = $('#drill');
+  if(!drillStack.length){ box.innerHTML = '<p style="color:var(--muted);font-size:13px;">↑ 点上面任意模块查看它干什么、下面跟了哪些东西。</p>'; return; }
+  const path = drillStack.map((n,i)=>
+    i===drillStack.length-1 ? `<b>${esc(n.t)}</b>` :
+    `<a data-up="${i}">${esc(n.t)}</a>`).join(' › ');
+  const n = drillStack[drillStack.length-1];
+  const kids = (n.k||[]).map((k,j)=>
+    `<div class="sub" data-kid="${j}">
+       <div class="t">${statusDot(k.s)} ${esc(k.t)}</div>
+       <div class="d">${esc(k.d||'')}</div>
+     </div>`).join('');
+  box.innerHTML = `
+    <div class="crumb">${drillStack.length>1?'<span class="back" data-up="0">‹ 返回顶层</span> · ':''}${path}</div>
+    <div class="summary"><span class="role">${esc(n.r||'')}</span>${esc(n.d||'')}</div>
+    ${kids?`<div class="subgrid">${kids}</div>`:'<p style="color:var(--muted);font-size:13px;">（此模块无子项，已是叶子节点）</p>'}
+  `;
+}
+$('#drill').addEventListener('click', e=>{
+  const up = e.target.closest('[data-up]');
+  if(up){ drillStack = drillStack.slice(0, +up.dataset.up + 1); renderFlow(); renderDrill(); return; }
+  const k = e.target.closest('.sub');
+  if(k){ const n = drillStack[drillStack.length-1]; drillStack.push(n.k[+k.dataset.kid]); renderFlow(); renderDrill(); }
+});
+
+/* ---- 总览树 ---- */
+function renderTree(){
+  const root = ARCH_DATA.tree;
+  $('#tree').innerHTML = '<ul>'+treeNode(root, true)+'</ul>';
+  $('#tree').addEventListener('click', e=>{
+    const tn = e.target.closest('.tnode'); if(!tn) return;
+    tn.classList.toggle('open');
+    const ul = tn.parentElement.querySelector(':scope > ul');
+    if(ul) ul.style.display = ul.style.display==='none'?'':'none';
+  });
+}
+function treeNode(n, root){
+  const kids = (n.k||[]).map(k=>treeNode(k,false)).join('');
+  const tw = kids ? `<span class="tw">▶</span>` : '';
+  const hasKids = kids ? ' has-kids' : '';
+  return `<li>
+    <span class="tnode ${n.s||''}${hasKids}">${tw}${statusDot(n.s)}${esc(n.t)}
+      <span class="badge">${n.r||''}</span></span>
+      <span class="desc">${esc(n.d||'')}</span>
+    ${kids?`<ul style="display:${root?'':'none'}">${kids}</ul>`:''}
+  </li>`;
+}
+
+/* ---- 功能清单（全功能盘点：防止重构漏迁） ---- */
+function renderFeatures(){
+  const rows = ARCH_DATA.features.map(f=>{
+    const st = {'ok':'<span class="ok">已定稿</span>','warn':'<span class="warn">待拍板</span>','no':'<span class="no">已否掉</span>'}[f.s]||'';
+    const im = {'done':'<span style="color:var(--ok)">已实现</span>','partial':'<span style="color:var(--warn)">部分实现</span>','todo':'<span style="color:var(--muted)">未实现</span>','online':'<span style="color:var(--warn)">仅线上</span>','-':''}[f.impl]||'';
+    return `<div class="feat">
+      <div class="fh"><b>${esc(f.t)}</b> ${st} ${im}</div>
+      <div class="fl">
+        <span><i>触发</i>${esc(f.trig||'')}</span>
+        <span><i>产出</i>${esc(f.out||'')}</span>
+        <span><i>存哪</i>${esc(f.store||'')}</span>
+        <span><i>谁用</i>${esc(f.use||'')}</span>
+        <span><i>收尾</i>${esc(f.end||'')}</span>
+      </div>
+    </div>`;
+  }).join('');
+  $('#features').innerHTML = rows;
+}
+function renderPending(){
+  const items = ARCH_DATA.pending;
+  $('#pending').innerHTML = items.length === 0
+    ? '<p class="empty">✅ 暂无待拍板项——设计已全部定稿。后续只加功能、不改架构。</p>'
+    : '<ul class="pending">' + items.map(p=>`<li><span class="warn">⚠️</span> <b>${esc(p.t)}</b>：${esc(p.d)}</li>`).join('') + '</ul>';
+}
+
+/* ---- 实现待办清单（设计已定，代码没做） ---- */
+function renderTodo(){
+  $('#todo').innerHTML = '<ul class="pending">' +
+    ARCH_DATA.todo.map(p=>`<li><span style="color:var(--muted)">🔧</span> <b>${esc(p.t)}</b>：${esc(p.d)}</li>`).join('') +
+    '</ul>';
+}
+
+renderChainBar(); renderFlow(); renderDrill(); renderTree(); renderFeatures(); renderPending(); renderTodo();
+</script>
+</body>
+</html>
